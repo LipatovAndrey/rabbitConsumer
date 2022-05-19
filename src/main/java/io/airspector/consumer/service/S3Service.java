@@ -1,17 +1,13 @@
-package io.airspector.service;
+package io.airspector.consumer.service;
 
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.*;
 import com.amazonaws.util.IOUtils;
 import com.thebuzzmedia.exiftool.ExifTool;
 import com.thebuzzmedia.exiftool.ExifToolBuilder;
-import com.thebuzzmedia.exiftool.Tag;
-import io.airspector.domain.dto.FileDto;
-import io.airspector.exception.BadRequestException;
-import io.airspector.utils.PathUtils;
+import io.airspector.consumer.dto.ImageDto;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.net.URL;
@@ -27,55 +23,13 @@ public class S3Service {
     @Autowired
     private AmazonS3 s3client;
 
-    public void upload(MultipartFile file, String filePath) {
-        InitiateMultipartUploadRequest request = new InitiateMultipartUploadRequest(BUCKET_NAME, filePath);
-        InitiateMultipartUploadResult result = s3client.initiateMultipartUpload(request);
-        try {
-            s3client.putObject(result.getBucketName(), result.getKey(), file.getInputStream(), new ObjectMetadata());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public void upload(ByteArrayOutputStream file, String filePath) {
-        InitiateMultipartUploadRequest request = new InitiateMultipartUploadRequest(BUCKET_NAME, filePath);
-        InitiateMultipartUploadResult result = s3client.initiateMultipartUpload(request);
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(file.toByteArray());
-        s3client.putObject(result.getBucketName(), result.getKey(), inputStream, new ObjectMetadata());
-    }
-
     public void upload(byte[] byteArray, String filePath) {
         InitiateMultipartUploadRequest request = new InitiateMultipartUploadRequest(BUCKET_NAME, filePath);
         InitiateMultipartUploadResult result = s3client.initiateMultipartUpload(request);
         ByteArrayInputStream inputStream = new ByteArrayInputStream(byteArray);
         s3client.putObject(result.getBucketName(), result.getKey(), inputStream, new ObjectMetadata());
-
     }
 
-    public FileDto read(Long id, String filePath) {
-        S3Object object = s3client.getObject(BUCKET_NAME, filePath);
-        try {
-            byte[] content = IOUtils.toByteArray(object.getObjectContent());
-            return new FileDto(id, content);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        throw new BadRequestException("can't read file from s3");
-    }
-
-    public List<String> getPresignedUrls(String directory, String format) {
-        List<String> keys = getKeys(directory);
-
-        if (format != null) {
-            keys = PathUtils.filterByFormat(keys, format);
-        } else {
-            keys = getKeys(directory);
-        }
-        keys = PathUtils.filterByIsSubDirectory(keys, directory);
-        return keys.parallelStream()
-                .map(s -> generatePresignedUrl(s))
-                .collect(Collectors.toList());
-    }
 
     public List<String> getKeys(String directory) {
         ListObjectsV2Result objects = s3client.listObjectsV2(BUCKET_NAME, directory);
@@ -106,7 +60,7 @@ public class S3Service {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        throw new BadRequestException("can't read file from s3");
+        throw new RuntimeException("can't read file from s3");
     }
 
     public boolean isPitchLessThirty(String filePath) {
@@ -118,14 +72,14 @@ public class S3Service {
             byte[] content = IOUtils.toByteArray(object.getObjectContent());
             OutputStream outStream = new FileOutputStream(targetFile);
             outStream.write(content);
-            Map<Tag, String> meta = exifTool.getImageMeta(targetFile);
-            for (Map.Entry<Tag, String> entry : meta.entrySet()) {
-                Tag tag = entry.getKey();
+            Map<com.thebuzzmedia.exiftool.Tag, String> meta = exifTool.getImageMeta(targetFile);
+            for (Map.Entry<com.thebuzzmedia.exiftool.Tag, String> entry : meta.entrySet()) {
+                com.thebuzzmedia.exiftool.Tag tag = entry.getKey();
                 String s = entry.getValue();
-                System.out.println(tag);
                 if (tag.getName().equals("CameraOrientationFLUPitch")) {
                     Double pitch = Double.valueOf(s);
-                    if (pitch < 30) {
+                    System.out.println(tag +" "+ pitch);
+                    if (pitch < 30) { //todo 15%
                         isPitchLessThirty = true;
                     }
                 }
@@ -133,12 +87,98 @@ public class S3Service {
             targetFile.delete();
         } catch (IOException e) {
             e.printStackTrace();
+        }finally {
+            if (object!=null){
+                try {
+                    object.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
+
+
+        return isPitchLessThirty;
+    }
+
+    public ImageDto getImageDto(String filePath) {
+        S3Object object = s3client.getObject(new GetObjectRequest(BUCKET_NAME, filePath));
+        ImageDto dto = new ImageDto();
+        dto.setPath(filePath);
+        try {
+            ExifTool exifTool = new ExifToolBuilder().build();
+            File targetFile = File.createTempFile("temp", ".JPG");
+            byte[] content = IOUtils.toByteArray(object.getObjectContent());
+            OutputStream outStream = new FileOutputStream(targetFile);
+            outStream.write(content);
+            Map<com.thebuzzmedia.exiftool.Tag, String> meta = exifTool.getImageMeta(targetFile);
+            for (Map.Entry<com.thebuzzmedia.exiftool.Tag, String> entry : meta.entrySet()) {
+                com.thebuzzmedia.exiftool.Tag tag = entry.getKey();
+                String s = entry.getValue();
+                if (tag.getName().equals("CameraOrientationFLUPitch")) {
+                    Double pitch = Double.valueOf(s);
+                    dto.setPitch(pitch);
+                }
+                if (tag.getName().equals("CameraPositionFLUZ")) {
+                    Double height = Double.valueOf(s);
+                    dto.setHeight(height);
+                }
+            }
+            targetFile.delete();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }finally {
+            if (object!=null){
+                try {
+                    object.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
+
+
+        return dto;
+    }
+
+
+    public boolean isHeightLessThirteen(String filePath) {
+        S3Object object = s3client.getObject(new GetObjectRequest(BUCKET_NAME, filePath));
+        boolean isPitchLessThirty = false;
+        try {
+            ExifTool exifTool = new ExifToolBuilder().build();
+            File targetFile = File.createTempFile("temp", ".JPG");
+            byte[] content = IOUtils.toByteArray(object.getObjectContent());
+            OutputStream outStream = new FileOutputStream(targetFile);
+            outStream.write(content);
+            Map<com.thebuzzmedia.exiftool.Tag, String> meta = exifTool.getImageMeta(targetFile);
+            for (Map.Entry<com.thebuzzmedia.exiftool.Tag, String> entry : meta.entrySet()) {
+                com.thebuzzmedia.exiftool.Tag tag = entry.getKey();
+                String s = entry.getValue();
+
+                if (tag.getName().equals("CameraPositionFLUZ")) {
+                    Double pitch = Double.valueOf(s);
+                    System.out.println(tag +" "+ pitch);
+                    if (pitch > 15) {
+                        isPitchLessThirty = true;
+                    }
+                }
+            }
+            targetFile.delete();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }finally {
+            if (object!=null){
+                try {
+                    object.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
         }
         return isPitchLessThirty;
     }
 
-    public void delete(String filePath) {
-        DeleteObjectRequest request = new DeleteObjectRequest(BUCKET_NAME, filePath);
-        s3client.deleteObject(request);
-    }
 }

@@ -1,4 +1,4 @@
-package io.airspector.config;
+package io.airspector.consumer.config;
 
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
@@ -6,11 +6,18 @@ import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import lombok.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class AwsConfig {
+
+    @Value("${aws.accessKey}")
+    private String accessKey;
+
+    @Value("${aws.secretKey}")
+    private String secretKey;
 
     @Bean
     public AmazonS3 s3Client() {
@@ -23,6 +30,6 @@ public class AwsConfig {
 
     @Bean
     public AWSCredentials awsCredentials() {
-        return new BasicAWSCredentials("AKIA4J6BVAGCBJMT6X4R", "e4SM2vcCjm9ykwhir6ZejjMhJ9vWoQnKdKu8J6un");
+        return new BasicAWSCredentials(accessKey, secretKey);
     }
 }

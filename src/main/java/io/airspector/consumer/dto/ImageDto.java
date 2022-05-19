@@ -2,21 +2,25 @@ package io.airspector.consumer.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 @Getter
 @Setter
+@ToString
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class ResultDto {
+public class ImageDto {
 
-    @JsonProperty(value = "corrosion(%)")
-    private String fullPath;
+    @JsonProperty(value = "path")
+    private String path;
 
-    @JsonProperty(value = "surface")
-    private Double corrosionSurface;
+    @JsonProperty(value = "fileName")
+    private String fileName;
+
+    @JsonProperty(value = "pitch")
+    private Double pitch;
+
+    @JsonProperty(value = "height")
+    private Double height;
 }
